@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2015",
+    "lib": ["ES7"],
+    "checkJs": false,
+    "declaration": true,
+    "moduleResolution": "node",
+
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "noImplicitThis": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true
+  }
+}
