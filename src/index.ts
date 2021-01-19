@@ -219,7 +219,7 @@ class FishtrapDB<T> {
           const desc: FileDescriptor = {
             name,
             size: (typeof stats.size === 'string' ? parseInt(stats.size, 10) : stats.size),
-            mtime: stats.mtime,
+            mtime: (typeof stats.mtime === 'number' ? new Date(stats.mtime * 1000) : stats.mtime),
             uuid,
             generation: parseInt(genstr, 16),
           };

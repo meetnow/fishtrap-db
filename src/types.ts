@@ -23,7 +23,7 @@ import { Immutable } from "immer";
 
 export interface FileStats {
   size: number | string;
-  mtime: Date;
+  mtime: Date | number;
   isFile(): boolean;
 }
 
