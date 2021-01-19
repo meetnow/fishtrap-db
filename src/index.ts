@@ -19,9 +19,19 @@
 //  limitations under the Licence.
 //
 
-import { castImmutable, enablePatches, freeze, Immer } from 'immer';
+import { castImmutable, enablePatches, freeze, Immer, Immutable } from 'immer';
 
-import { FileStats, FishtrapFS, FishtrapConfig, FishtrapMerger, FileDescriptor, Snapshot, Transaction } from './types';
+import {
+  FileStats,
+  FishtrapFS,
+  FishtrapConfig,
+  FishtrapMerger,
+  FileDescriptor,
+  Snapshot,
+  Transaction,
+  FishtrapPostMergeHook,
+} from './types';
+
 import { lpadhex32, compareMtimes, compareGenerations, compareSequences, readDataBlock, writeDataBlock } from './utils';
 
 enablePatches();
@@ -52,6 +62,7 @@ class FishtrapDB<T> {
     config: FishtrapConfig,
     initialData: T,
     merger: FishtrapMerger<T>,
+    public postMergeHook?: FishtrapPostMergeHook<T>,
   ) {
     this.appUUID = config.appUUID;
     this.shardUUID = config.shardUUID;
@@ -75,7 +86,7 @@ class FishtrapDB<T> {
    *
    * The promise resolves as soon as the database has been opened (if not already) and the last update transaction was completed.
    */
-  async get () {
+  async get (): Promise<Immutable<T>> {
     await this._activeTx;
     return castImmutable(this._data);
   }
@@ -86,7 +97,7 @@ class FishtrapDB<T> {
    * Resolves to the updated data if the transaction was finished successfully.
    * @param updater Function that is executed in order to manipulate the data
    */
-  update (updater: (data: T) => void | T | Promise<void> | Promise<T>): Promise<T> {
+  update (updater: (data: T) => void | T | Promise<void> | Promise<T>): Promise<Immutable<T>> {
     const nextTx = this._activeTx.then(async () => {
       const [updated, delta] = await this._immer.produceWithPatches(this._data, updater);
       if (delta.length > 0) {
@@ -266,7 +277,7 @@ class FishtrapDB<T> {
 
     // Full merge
     const [updated, delta] = await this._immer.produceWithPatches(this._data, (d: T) =>
-      this._merger(d, snapshot.data, (base == null ? this._initialSnapshot.data : base.data)));
+      this._merger(d, snapshot.data, castImmutable(base.data)));
 
     this._generation = snapshot.generation;
     this._shardSize = 0;
@@ -376,6 +387,12 @@ class FishtrapDB<T> {
         if (baseSnapshot != null) {
           // Perform rebase
           await this._rebase(lastSnapshot, baseSnapshot);
+          if (this.postMergeHook != null) {
+            const hook = this.postMergeHook;
+            const finalData = castImmutable(this._data);
+            const baseData = castImmutable(baseSnapshot.data);
+            setTimeout(() => hook(finalData, baseData), 0);
+          }
           break;
         }
       }
@@ -427,6 +444,14 @@ class FishtrapDB<T> {
 
         this._activeTx = this._activeTx.then(() =>
           this._rebase(newerSnapshot, baseSnapshot));
+        this._activeTx.then(() => {
+          if (this.postMergeHook != null) {
+            const hook = this.postMergeHook;
+            const finalData = castImmutable(this._data);
+            const baseData = castImmutable(baseSnapshot.data);
+            setTimeout(() => hook(finalData, baseData), 0);
+          }
+        });
         break;
       }
     }
@@ -654,7 +679,7 @@ class FishtrapDB<T> {
       throw new Error('could not lock');
     }
 
-    let lastSnapshot = this._initialSnapshot;
+    let baseSnapshot = this._initialSnapshot;
     if (nextGeneration > 1) {
       const lastSnapshotFile = snapshotFiles.find(({ generation }) => generation === nextGeneration - 1);
       if (lastSnapshotFile == null || lastSnapshotFile.lockedBy != null) {
@@ -662,7 +687,7 @@ class FishtrapDB<T> {
         throw new Error('last snapshot lost or locked');
       }
       try {
-        lastSnapshot = await this._readSnapshot(lastSnapshotFile);
+        baseSnapshot = await this._readSnapshot(lastSnapshotFile);
       }
       catch (e) {
         await this._unlinkIgnoreError(lastSnapshotFile.name);
@@ -681,13 +706,13 @@ class FishtrapDB<T> {
 
     const compactedSnapshot: Snapshot<T> = {
       generation: nextGeneration,
-      data: lastSnapshot.data,
+      data: baseSnapshot.data,
       ancestors: {},
     };
     let first = true;
     for (const shardFile of generationShardFiles) {
       let finalSequence = -1;
-      let shardData = lastSnapshot.data;
+      let shardData = baseSnapshot.data;
       try {
         const transactions = await this._readShard(shardFile);
         for (const { sequence, delta } of transactions) {
@@ -706,7 +731,7 @@ class FishtrapDB<T> {
         else {
           try {
             compactedSnapshot.data = await this._immer.produce(compactedSnapshot.data, (d: T) =>
-              this._merger(d, shardData, lastSnapshot.data));
+              this._merger(d, shardData, castImmutable(baseSnapshot.data)));
           }
           catch (e) {
             await this._deleteLockfile(lockedGeneration);
@@ -737,10 +762,18 @@ class FishtrapDB<T> {
 
     // Instant rebase if possible
     this._activeTx = this._activeTx.then(() => {
-      if (this._generation === lastSnapshot.generation) {
-        return this._rebase(compactedSnapshot, lastSnapshot);
+      if (this._generation === baseSnapshot.generation) {
+        return this._rebase(compactedSnapshot, baseSnapshot);
       }
       return undefined;
+    });
+    this._activeTx.then(() => {
+      if (this.postMergeHook != null) {
+        const hook = this.postMergeHook;
+        const finalData = castImmutable(this._data);
+        const baseData = castImmutable(baseSnapshot.data);
+        setTimeout(() => hook(finalData, baseData), 0);
+      }
     });
   }
 

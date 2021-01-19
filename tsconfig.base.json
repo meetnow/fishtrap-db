@@ -2,9 +2,11 @@
   "compilerOptions": {
     "target": "ES2015",
     "lib": ["ES7"],
+    "module": "commonjs",
     "checkJs": false,
     "declaration": true,
     "moduleResolution": "node",
+    "esModuleInterop": true,
 
     "strict": true,
     "noImplicitAny": true,
