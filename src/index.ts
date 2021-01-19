@@ -218,7 +218,7 @@ class FishtrapDB<T> {
           const [, uuid, genstr, filetype] = m;
           const desc: FileDescriptor = {
             name,
-            size: stats.size,
+            size: (typeof stats.size === 'string' ? parseInt(stats.size, 10) : stats.size),
             mtime: stats.mtime,
             uuid,
             generation: parseInt(genstr, 16),
@@ -804,6 +804,7 @@ export {
   FishtrapFS,
   FishtrapConfig,
   FishtrapMerger,
+  FishtrapPostMergeHook,
 
   FishtrapDB,
 };
