@@ -25,11 +25,12 @@ import {
   FileStats,
   FishtrapFS,
   FishtrapConfig,
+  FishtrapUpdater,
   FishtrapMerger,
+  FishtrapPostCompactionHook,
   FileDescriptor,
   Snapshot,
   Transaction,
-  FishtrapPostCompactionHook,
 } from './types';
 
 import { lpadhex32, compareMtimes, compareGenerations, compareSequences, readDataBlock, writeDataBlock } from './utils';
@@ -38,7 +39,7 @@ enablePatches();
 
 const SD_FILE_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([0-9a-f]{8})\.sd(sn|sh|lk)$/i;
 
-class FishtrapDB<T> {
+export class FishtrapDB<T> {
   readonly appUUID: string;
   readonly shardUUID: string;
   readonly fs: FishtrapFS;
@@ -97,9 +98,13 @@ class FishtrapDB<T> {
    * Resolves to the updated data if the transaction was finished successfully.
    * @param updater Function that is executed in order to manipulate the data
    */
-  update (updater: (data: T) => void | T | Promise<void> | Promise<T>): Promise<Immutable<T>> {
+  update (updater: FishtrapUpdater<T>): Promise<Immutable<T>> {
     const nextTx = this._activeTx.then(async () => {
-      const [updated, delta] = await Promise.resolve(this._immer.produceWithPatches(this._data, updater));
+      const delta: any[] = [];
+      const updated = await this._immer.produce(
+        this._data,
+        updater,
+        (patches: any[]) => delta.push(...patches));
       if (delta.length > 0) {
         this._sequence += 1;
         await this._appendToShard({ sequence: this._sequence, delta });
@@ -276,8 +281,11 @@ class FishtrapDB<T> {
     }
 
     // Full merge
-    const [updated, delta] = await Promise.resolve(this._immer.produceWithPatches(this._data, (d: T) =>
-      this._merger(d, snapshot.data, castImmutable(base.data))));
+    const delta: any[] = [];
+    const updated = await this._immer.produce(
+      this._data,
+      (d: T) => this._merger(d, snapshot.data, castImmutable(base.data)),
+      (patches: any[]) => delta.push(...patches));
 
     this._generation = snapshot.generation;
     this._shardSize = 0;
@@ -716,8 +724,9 @@ class FishtrapDB<T> {
         }
         else {
           try {
-            compactedSnapshot.data = await Promise.resolve(this._immer.produce(compactedSnapshot.data, (d: T) =>
-              this._merger(d, shardData, castImmutable(baseSnapshot.data))));
+            compactedSnapshot.data = await this._immer.produce(
+              compactedSnapshot.data,
+              (d: T) => this._merger(d, shardData, castImmutable(baseSnapshot.data)));
           }
           catch (e) {
             await this._deleteLockfile(lockedGeneration);
@@ -785,12 +794,11 @@ class FishtrapDB<T> {
   }
 }
 
-export {
+export type {
   FileStats,
   FishtrapFS,
   FishtrapConfig,
+  FishtrapUpdater,
   FishtrapMerger,
   FishtrapPostCompactionHook,
-
-  FishtrapDB,
-};
+}

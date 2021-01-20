@@ -48,9 +48,11 @@ export interface FishtrapConfig {
   checkIntervalMinutes?: number;
 }
 
-export type FishtrapMerger<T> = (target: T, other: T, base: Immutable<T>) => void | T | Immutable<T> | Promise<void | T | Immutable<T>>;
+export type FishtrapUpdater<T> = (data: T) => void | T | Promise<void | T>
 
-export type FishtrapPostCompactionHook<T> = (final: Immutable<T>, base: Immutable<T>) => void;
+export type FishtrapMerger<T> = (target: T, other: T, base: Immutable<T>) => void | T | Immutable<T> | Promise<void | T | Immutable<T>>
+
+export type FishtrapPostCompactionHook<T> = (final: Immutable<T>, base: Immutable<T>) => void
 
 export interface FileDescriptor {
   name: string;
