@@ -50,7 +50,7 @@ export interface FishtrapConfig {
 
 export type FishtrapMerger<T> = (target: T, other: T, base: Immutable<T>) => void | T | Immutable<T> | Promise<void | T | Immutable<T>>;
 
-export type FishtrapPostMergeHook<T> = (final: Immutable<T>, base: Immutable<T>) => void;
+export type FishtrapPostCompactionHook<T> = (final: Immutable<T>, base: Immutable<T>) => void;
 
 export interface FileDescriptor {
   name: string;

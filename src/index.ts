@@ -29,7 +29,7 @@ import {
   FileDescriptor,
   Snapshot,
   Transaction,
-  FishtrapPostMergeHook,
+  FishtrapPostCompactionHook,
 } from './types';
 
 import { lpadhex32, compareMtimes, compareGenerations, compareSequences, readDataBlock, writeDataBlock } from './utils';
@@ -62,7 +62,7 @@ class FishtrapDB<T> {
     config: FishtrapConfig,
     initialData: T,
     merger: FishtrapMerger<T>,
-    public postMergeHook?: FishtrapPostMergeHook<T>,
+    public postCompactionHook?: FishtrapPostCompactionHook<T>,
   ) {
     this.appUUID = config.appUUID;
     this.shardUUID = config.shardUUID;
@@ -99,7 +99,7 @@ class FishtrapDB<T> {
    */
   update (updater: (data: T) => void | T | Promise<void> | Promise<T>): Promise<Immutable<T>> {
     const nextTx = this._activeTx.then(async () => {
-      const [updated, delta] = await this._immer.produceWithPatches(this._data, updater);
+      const [updated, delta] = await Promise.resolve(this._immer.produceWithPatches(this._data, updater));
       if (delta.length > 0) {
         this._sequence += 1;
         await this._appendToShard({ sequence: this._sequence, delta });
@@ -276,8 +276,8 @@ class FishtrapDB<T> {
     }
 
     // Full merge
-    const [updated, delta] = await this._immer.produceWithPatches(this._data, (d: T) =>
-      this._merger(d, snapshot.data, castImmutable(base.data)));
+    const [updated, delta] = await Promise.resolve(this._immer.produceWithPatches(this._data, (d: T) =>
+      this._merger(d, snapshot.data, castImmutable(base.data))));
 
     this._generation = snapshot.generation;
     this._shardSize = 0;
@@ -387,12 +387,6 @@ class FishtrapDB<T> {
         if (baseSnapshot != null) {
           // Perform rebase
           await this._rebase(lastSnapshot, baseSnapshot);
-          if (this.postMergeHook != null) {
-            const hook = this.postMergeHook;
-            const finalData = castImmutable(this._data);
-            const baseData = castImmutable(baseSnapshot.data);
-            setTimeout(() => hook(finalData, baseData), 0);
-          }
           break;
         }
       }
@@ -444,14 +438,6 @@ class FishtrapDB<T> {
 
         this._activeTx = this._activeTx.then(() =>
           this._rebase(newerSnapshot, baseSnapshot));
-        this._activeTx.then(() => {
-          if (this.postMergeHook != null) {
-            const hook = this.postMergeHook;
-            const finalData = castImmutable(this._data);
-            const baseData = castImmutable(baseSnapshot.data);
-            setTimeout(() => hook(finalData, baseData), 0);
-          }
-        });
         break;
       }
     }
@@ -730,8 +716,8 @@ class FishtrapDB<T> {
         }
         else {
           try {
-            compactedSnapshot.data = await this._immer.produce(compactedSnapshot.data, (d: T) =>
-              this._merger(d, shardData, castImmutable(baseSnapshot.data)));
+            compactedSnapshot.data = await Promise.resolve(this._immer.produce(compactedSnapshot.data, (d: T) =>
+              this._merger(d, shardData, castImmutable(baseSnapshot.data))));
           }
           catch (e) {
             await this._deleteLockfile(lockedGeneration);
@@ -760,20 +746,20 @@ class FishtrapDB<T> {
 
     await this._deleteLockfile(lockedGeneration);
 
+    // Run hook
+    if (this.postCompactionHook != null) {
+      const hook = this.postCompactionHook;
+      const finalData = castImmutable(compactedSnapshot.data);
+      const baseData = castImmutable(baseSnapshot.data);
+      setTimeout(() => hook(finalData, baseData), 0);
+    }
+
     // Instant rebase if possible
     this._activeTx = this._activeTx.then(() => {
       if (this._generation === baseSnapshot.generation) {
         return this._rebase(compactedSnapshot, baseSnapshot);
       }
       return undefined;
-    });
-    this._activeTx.then(() => {
-      if (this.postMergeHook != null) {
-        const hook = this.postMergeHook;
-        const finalData = castImmutable(this._data);
-        const baseData = castImmutable(baseSnapshot.data);
-        setTimeout(() => hook(finalData, baseData), 0);
-      }
     });
   }
 
@@ -804,7 +790,7 @@ export {
   FishtrapFS,
   FishtrapConfig,
   FishtrapMerger,
-  FishtrapPostMergeHook,
+  FishtrapPostCompactionHook,
 
   FishtrapDB,
 };
