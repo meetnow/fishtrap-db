@@ -314,7 +314,6 @@ export class FishtrapDB<T> {
         catch (e) {
           console.log(`FishtrapDB@${this.appUUID}: Snapshot \"${snapshotFiles[i].name}\" appears to be broken, skipping.`);
           snapshotFiles.splice(i, 1);
-          i += 1;
         }
       }
     }
