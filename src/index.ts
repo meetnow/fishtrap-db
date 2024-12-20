@@ -137,6 +137,7 @@ export class FishtrapDB<T> {
       this._checkTimer = undefined;
     }
     this._activeTx = Promise.reject(new Error('Database closed'));
+    this._activeTx.catch(() => undefined); // prevent unhandled rejection
   }
 
   /**
@@ -196,6 +197,7 @@ export class FishtrapDB<T> {
       catch (e) {
         try {
           await this.fs.rename(this.fs.join(this.baseDirectory, name), this.fs.join(this.baseDirectory, newName));
+          break;
         }
         catch (ee) {
           // pass
